@@ -1,0 +1,28 @@
+[project]
+name = "dbt-mcp"
+version = "0.1.0"
+description = "MCP server exposing dbt run state to AI assistants"
+readme = "README.md"
+authors = [
+    { name = "Qamar Raza", email = "raza.qamar@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "dbt-sentinel>=0.6.2",
+    "mcp>=2.0.0",
+]
+
+[project.scripts]
+dbt-mcp = "dbt_mcp.server:main"
+
+[build-system]
+requires = ["uv_build>=0.11.3,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.16.2",
+]
+
+
