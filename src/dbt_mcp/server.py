@@ -195,7 +195,7 @@ def _consistency_check(warehouse: Warehouse) -> dict[str, Any]:
         from datetime import datetime
 
         try:
-            gen = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            gen = datetime.fromisoformat(generated_at)
             hours = (datetime.now(UTC) - gen).total_seconds() / 3600
             age_note = f"manifest is {hours:.0f}h old"
             if hours > 24:
