@@ -88,7 +88,7 @@ explicitly in their config, so configuration has exactly one source.
 **Why MCP rather than a CLI.** A CLI answers the question you anticipated. MCP tools let
 an agent compose answers to questions you didn't — it picks the tools and the order.
 
-**Thin tools, not one god-tool.** Each does one legible thing so a model can reason about
+**Thin tools, not one catch-all.** Each does one legible thing so a model can reason about
 when to use it. The docstrings *are* the interface: they become the descriptions the model
 reads when choosing.
 
