@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -136,6 +137,86 @@ def sample_failing_rows(test_name: str, limit: int = 10) -> dict[str, Any]:
     }
 
 
+def _consistency_check(warehouse: Warehouse) -> dict[str, Any]:
+    """Verify the manifest and the warehouse describe the same project.
+
+    Pointing DBT_TARGET_DIR at one project and the warehouse at another is a
+    silent, dangerous misconfiguration: the test SQL still runs (ephemeral models
+    are inlined as CTEs), so you get a confident diagnosis of a model that isn't
+    in your warehouse. This makes that fail loudly instead.
+    """
+    manifest_path = _target_dir() / "manifest.json"
+    with manifest_path.open(encoding="utf-8") as fh:
+        manifest = json.load(fh)
+
+    project = manifest.get("metadata", {}).get("project_name")
+    generated_at = manifest.get("metadata", {}).get("generated_at")
+
+    relations: list[str] = []
+    for node in manifest.get("nodes", {}).values():
+        if node.get("resource_type") != "model":
+            continue
+        if node.get("config", {}).get("materialized") == "ephemeral":
+            continue
+        schema, identifier = node.get("schema"), node.get("alias") or node.get("name")
+        if schema and identifier:
+            relations.append(f"{schema}.{identifier}")
+        if len(relations) >= 5:
+            break
+
+    if not relations:
+        return {
+            "manifest_project": project,
+            "manifest_generated_at": generated_at,
+            "verdict": "inconclusive: no materialized models to check",
+        }
+
+    found, missing = [], []
+    for relation in relations:
+        try:
+            warehouse.query(f"select * from {relation} limit 0")
+            found.append(relation)
+        except Exception:  # noqa: BLE001
+            missing.append(relation)
+
+    if not found:
+        verdict = (
+            "MISMATCH: none of the manifest's models exist in this warehouse. "
+            "DBT_TARGET_DIR and the warehouse point at different projects; any "
+            "diagnosis would describe SQL that is not in your warehouse."
+        )
+    elif missing:
+        verdict = f"partial: {len(found)} of {len(relations)} sampled models found"
+    else:
+        verdict = "consistent: manifest models are present in the warehouse"
+
+    age_note = None
+    if generated_at:
+        from datetime import datetime
+
+        try:
+            gen = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+            hours = (datetime.now(UTC) - gen).total_seconds() / 3600
+            age_note = f"manifest is {hours:.0f}h old"
+            if hours > 24:
+                verdict = (
+                    f"STALE: {age_note}. The compiled SQL in this manifest may no "
+                    "longer match the models in the warehouse; re-run dbt build "
+                    "before trusting a diagnosis. (" + verdict + ")"
+                )
+        except ValueError:
+            pass
+
+    return {
+        "manifest_project": project,
+        "manifest_generated_at": generated_at,
+        "manifest_age": age_note,
+        "models_found": found,
+        "models_missing": missing,
+        "verdict": verdict,
+    }
+
+
 @mcp.tool()
 def health() -> dict[str, Any]:
     """Check that the server is configured correctly and can reach its inputs.
@@ -161,6 +242,10 @@ def health() -> dict[str, Any]:
         try:
             warehouse.query("select 1")
             report["checks"]["warehouse"] = f"{warehouse.name}: reachable"
+            consistency = _consistency_check(warehouse)
+            report["checks"]["consistency"] = consistency
+            if consistency["verdict"].startswith("MISMATCH"):
+                report["ok"] = False
         finally:
             warehouse.close()
     except Exception as exc:  # noqa: BLE001 - report any engine's failure
