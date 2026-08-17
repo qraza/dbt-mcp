@@ -20,10 +20,14 @@ Run:
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any
 
+import duckdb
+from dbt_sentinel import store
+from dbt_sentinel.analyze import analyze
 from dbt_sentinel.context import gather_context
 from dbt_sentinel.parse import parse
 from dbt_sentinel.warehouse import Warehouse, open_warehouse
@@ -164,6 +168,180 @@ def health() -> dict[str, Any]:
         report["checks"]["warehouse"] = f"error: {exc}"
 
     return report
+
+
+# --- M2 tools -------------------------------------------------------------
+
+
+def _find_test(test_name: str):
+    """Resolve a test by name or unique_id from the latest run."""
+    for f in parse(_target_dir()):
+        if test_name in (f.test_name, f.unique_id):
+            return f
+    return None
+
+
+@mcp.tool()
+def explain_failure(test_name: str, sample_limit: int = 20) -> dict[str, Any]:
+    """Explain WHY a test failed, grounded in the rows that actually broke.
+
+    Samples the offending rows, then asks an LLM to diagnose the root cause using
+    only that evidence. Returns a confidence level -- treat 'low' as "the evidence
+    did not support a firm conclusion", not as a weak answer.
+
+    Requires ANTHROPIC_API_KEY. Use list_failing_tests first to get a test name.
+
+    Args:
+        test_name: the test's name or unique_id.
+        sample_limit: how many offending rows to reason over.
+    """
+    test = _find_test(test_name)
+    if test is None:
+        return {"error": f"No failing test matching '{test_name}'. Try list_failing_tests."}
+
+    warehouse = _warehouse()
+    try:
+        ctx = gather_context(test, warehouse, sample_limit=sample_limit)
+    finally:
+        warehouse.close()
+
+    try:
+        analysis = analyze(ctx)
+    except RuntimeError as exc:
+        return {"error": str(exc)}
+
+    return {
+        "test_name": test.test_name,
+        "failure_count": test.failure_count,
+        "root_cause": analysis.root_cause,
+        "suggested_fix": analysis.suggested_fix,
+        "confidence": analysis.confidence,
+        "evidence": analysis.evidence,
+        "rows_examined": ctx.sampled_count,
+    }
+
+
+@mcp.tool()
+def model_lineage(model_name: str) -> dict[str, Any]:
+    """Show what a model depends on and what depends on it.
+
+    Reads the dbt manifest -- a deterministic graph lookup, no AI involved.
+    Useful for judging blast radius: if this model is wrong, what else is affected?
+
+    Args:
+        model_name: the model's name, e.g. 'int_trips_enriched'.
+    """
+    manifest_path = _target_dir() / "manifest.json"
+    with manifest_path.open(encoding="utf-8") as fh:
+        manifest = json.load(fh)
+
+    nodes: dict[str, Any] = manifest.get("nodes", {})
+    sources: dict[str, Any] = manifest.get("sources", {})
+
+    matches = [
+        (uid, node)
+        for uid, node in nodes.items()
+        if node.get("resource_type") == "model" and node.get("name") == model_name
+    ]
+    if not matches:
+        available = sorted(
+            n["name"] for n in nodes.values() if n.get("resource_type") == "model"
+        )
+        return {"error": f"No model named '{model_name}'.", "available_models": available}
+
+    unique_id, node = matches[0]
+
+    def _label(dep_id: str) -> str:
+        n = nodes.get(dep_id) or sources.get(dep_id) or {}
+        return n.get("name", dep_id)
+
+    parents = [_label(d) for d in node.get("depends_on", {}).get("nodes", [])]
+    children = [
+        n.get("name", uid)
+        for uid, n in nodes.items()
+        if unique_id in n.get("depends_on", {}).get("nodes", [])
+        and n.get("resource_type") == "model"
+    ]
+    tests = [
+        n.get("name", uid)
+        for uid, n in nodes.items()
+        if n.get("resource_type") == "test"
+        and unique_id in n.get("depends_on", {}).get("nodes", [])
+    ]
+
+    return {
+        "model": model_name,
+        "materialized": node.get("config", {}).get("materialized"),
+        "depends_on": parents,
+        "used_by": children,
+        "guarded_by_tests": tests,
+        "description": node.get("description") or None,
+    }
+
+
+@mcp.tool()
+def test_history(test_name: str) -> dict[str, Any]:
+    """Show whether a test is newly broken or has been failing for a while.
+
+    Reads dbt-sentinel's own run history. Use this to prioritise: a test that
+    started failing today is usually more urgent than one failing for weeks.
+
+    Args:
+        test_name: the test's unique_id (preferred) or name.
+    """
+    history_path = Path(
+        os.environ.get("SENTINEL_HISTORY_PATH", str(store.DEFAULT_HISTORY_PATH))
+    ).expanduser()
+
+    if not history_path.is_file():
+        return {
+            "error": f"No history database at {history_path}. "
+            "Run `sentinel analyze` at least once to start recording runs."
+        }
+
+    con = duckdb.connect(str(history_path), read_only=True)
+    try:
+        rows = con.execute(
+            """
+            select r.run_at, t.unique_id, t.test_name, t.status,
+                   t.failure_count, t.confidence
+            from test_results t join runs r using (run_id)
+            where t.unique_id = ? or t.test_name = ?
+            order by r.run_at
+            """,
+            [test_name, test_name],
+        ).fetchall()
+    finally:
+        con.close()
+
+    if not rows:
+        return {"test_name": test_name, "runs": [], "note": "No recorded history for this test."}
+
+    entries = [
+        {
+            "run_at": str(run_at),
+            "status": status,
+            "failure_count": failure_count,
+            "confidence": confidence,
+        }
+        for run_at, _uid, _name, status, failure_count, confidence in rows
+    ]
+    first, last = entries[0], entries[-1]
+    trend = "unchanged"
+    if first["failure_count"] and last["failure_count"]:
+        if last["failure_count"] > first["failure_count"]:
+            trend = "worsening"
+        elif last["failure_count"] < first["failure_count"]:
+            trend = "improving"
+
+    return {
+        "test_name": rows[0][2],
+        "times_recorded": len(entries),
+        "first_seen": first["run_at"],
+        "last_seen": last["run_at"],
+        "trend": trend,
+        "runs": entries,
+    }
 
 
 def main() -> None:
