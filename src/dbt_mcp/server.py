@@ -34,6 +34,9 @@ from dbt_sentinel.parse import parse
 from dbt_sentinel.warehouse import Warehouse, open_warehouse
 from mcp.server import MCPServer
 
+from . import telemetry
+from .telemetry import logged
+
 mcp = MCPServer(
     name="dbt-mcp",
     instructions=(
@@ -71,6 +74,7 @@ def _warehouse() -> Warehouse:
 
 
 @mcp.tool()
+@logged
 def run_summary() -> dict[str, Any]:
     """Summarise the most recent dbt run: how many tests failed, and their names.
 
@@ -85,6 +89,7 @@ def run_summary() -> dict[str, Any]:
 
 
 @mcp.tool()
+@logged
 def list_failing_tests() -> list[dict[str, Any]]:
     """List every failing test in the last dbt run, with what it guards.
 
@@ -107,6 +112,7 @@ def list_failing_tests() -> list[dict[str, Any]]:
 
 
 @mcp.tool()
+@logged
 def sample_failing_rows(test_name: str, limit: int = 10) -> dict[str, Any]:
     """Fetch the actual rows that caused a test to fail.
 
@@ -218,6 +224,7 @@ def _consistency_check(warehouse: Warehouse) -> dict[str, Any]:
 
 
 @mcp.tool()
+@logged
 def health() -> dict[str, Any]:
     """Check that the server is configured correctly and can reach its inputs.
 
@@ -267,6 +274,7 @@ def _find_test(test_name: str):
 
 
 @mcp.tool()
+@logged
 def explain_failure(test_name: str, sample_limit: int = 20) -> dict[str, Any]:
     """Explain WHY a test failed, grounded in the rows that actually broke.
 
@@ -307,6 +315,7 @@ def explain_failure(test_name: str, sample_limit: int = 20) -> dict[str, Any]:
 
 
 @mcp.tool()
+@logged
 def model_lineage(model_name: str) -> dict[str, Any]:
     """Show what a model depends on and what depends on it.
 
@@ -365,6 +374,7 @@ def model_lineage(model_name: str) -> dict[str, Any]:
 
 
 @mcp.tool()
+@logged
 def test_history(test_name: str) -> dict[str, Any]:
     """Show whether a test is newly broken or has been failing for a while.
 
@@ -426,6 +436,73 @@ def test_history(test_name: str) -> dict[str, Any]:
         "last_seen": last["run_at"],
         "trend": trend,
         "runs": entries,
+    }
+
+
+@mcp.tool()
+@logged
+def usage_stats() -> dict[str, Any]:
+    """Summarise how this server has been used: calls, latency, errors, time saved.
+
+    Reads the structured call log. The time-saved figure compares actual tool latency
+    against MANUAL_BASELINE_MINUTES -- how long the same question takes by hand
+    (opening run_results.json, cross-referencing manifest.json, querying the warehouse).
+    It is an estimate based on a stated assumption, not a measurement of the human.
+    """
+    path = Path(
+        os.environ.get("DBT_MCP_LOG", str(telemetry.DEFAULT_LOG_PATH))
+    ).expanduser()
+    if not path.is_file():
+        return {"error": f"No call log at {path}. Make some tool calls first."}
+
+    records = []
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            try:
+                records.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    if not records:
+        return {"error": "Call log is empty."}
+
+    durations = sorted(r["duration_ms"] for r in records if "duration_ms" in r)
+    by_tool: dict[str, int] = {}
+    for r in records:
+        by_tool[r.get("tool", "?")] = by_tool.get(r.get("tool", "?"), 0) + 1
+
+    failures = [r for r in records if r.get("status") != "ok"]
+    baseline = float(
+        os.environ.get("MANUAL_BASELINE_MINUTES", telemetry.DEFAULT_BASELINE_MINUTES)
+    )
+    # A single question costs several tool calls, so counting calls would inflate
+    # the figure. Attribute saved time only to completed diagnoses -- the work a
+    # human would otherwise have done by hand.
+    answered = len(
+        [r for r in records if r.get("tool") == "explain_failure" and r.get("status") == "ok"]
+    )
+    machine_minutes = sum(durations) / 1000 / 60
+    saved = max(0.0, round(answered * baseline - machine_minutes, 1))
+
+    def pct(p: float) -> float:
+        if not durations:
+            return 0.0
+        return round(durations[min(int(len(durations) * p), len(durations) - 1)], 1)
+
+    return {
+        "total_calls": len(records),
+        "successful": len([r for r in records if r.get("status") == "ok"]),
+        "diagnoses_completed": answered,
+        "errors": len(failures),
+        "calls_by_tool": by_tool,
+        "latency_ms": {"p50": pct(0.5), "p95": pct(0.95), "max": round(durations[-1], 1)},
+        "manual_baseline_minutes": baseline,
+        "estimated_minutes_saved": saved,
+        "assumption": (
+            f"Assumes {baseline} minutes per diagnosis done by hand; only completed "
+            f"explain_failure calls count, not every tool call. "
+            "Adjust with MANUAL_BASELINE_MINUTES."
+        ),
     }
 
 

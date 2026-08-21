@@ -116,3 +116,32 @@ uv run pytest -v
 
 Tests build their own dbt fixtures in a temp directory — no warehouse, no API key, no
 sibling repository required.
+
+## Observability and measurement
+
+Every tool call is appended to a structured log (`.dbt-mcp/calls.jsonl` by default,
+override with `DBT_MCP_LOG`): tool name, duration, status, truncated arguments, and any
+error. `usage_stats` summarises it.
+
+**Logging never writes to stdout.** Under stdio transport stdout carries the MCP protocol
+itself, so anything else written there corrupts the JSON-RPC stream. Records go to a file;
+logging failures go to stderr and never break a tool call.
+
+Observed on a real dbt project:
+
+| Metric | Value |
+| --- | --- |
+| p50 latency | ~4 ms |
+| p95 latency | ~11 s |
+| Deterministic tools | ~4 ms |
+| `explain_failure` (one LLM call) | ~11 s |
+
+That 2,500x gap is why only one of seven tools uses a model. Lineage, history and run
+summaries are graph and file lookups; routing them through an LLM would add latency and
+cost for no gain in accuracy.
+
+**Time saved is estimated, not measured.** The figure counts *completed diagnoses* against
+a stated baseline (`MANUAL_BASELINE_MINUTES`, default 15 — roughly how long it takes to
+open `run_results.json`, cross-reference `manifest.json`, and query the warehouse by hand).
+An earlier version counted every tool call, which overstated the benefit roughly five-fold,
+since one question costs several calls.
