@@ -63,10 +63,25 @@ def _target_dir() -> Path:
 def _warehouse() -> Warehouse:
     duck = os.environ.get("DBT_DUCKDB_PATH")
     project = os.environ.get("BQ_PROJECT")
+
+    snowflake = None
+    if os.environ.get("SNOWFLAKE_ACCOUNT"):
+        snowflake = {
+            "account": os.environ["SNOWFLAKE_ACCOUNT"],
+            "user": os.environ["SNOWFLAKE_USER"],
+            "private_key_path": os.environ["SNOWFLAKE_PRIVATE_KEY_PATH"],
+            "private_key_passphrase": os.environ.get("SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"),
+            "warehouse": os.environ.get("SNOWFLAKE_WAREHOUSE"),
+            "database": os.environ.get("SNOWFLAKE_DATABASE"),
+            "schema": os.environ.get("SNOWFLAKE_SCHEMA"),
+            "role": os.environ.get("SNOWFLAKE_ROLE"),
+        }
+
     return open_warehouse(
         duckdb_path=Path(duck).expanduser() if duck else None,
         bq_project=project,
         bq_location=os.environ.get("BQ_LOCATION"),
+        snowflake=snowflake,
     )
 
 

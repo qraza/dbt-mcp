@@ -77,6 +77,7 @@ that can be confidently wrong should say when its inputs are suspect.
 | `DBT_TARGET_DIR` | dbt `target/` directory (required) |
 | `DBT_DUCKDB_PATH` | DuckDB warehouse file |
 | `BQ_PROJECT` / `BQ_LOCATION` | BigQuery alternative |
+| `SNOWFLAKE_ACCOUNT` / `_USER` / `_PRIVATE_KEY_PATH` | Snowflake (key-pair auth); optional `_WAREHOUSE`, `_DATABASE`, `_SCHEMA`, `_ROLE`, `_PRIVATE_KEY_PASSPHRASE` |
 | `ANTHROPIC_API_KEY` | Required only by `explain_failure` |
 | `SENTINEL_HISTORY_PATH` | dbt-sentinel history database (defaults to `.sentinel/history.duckdb`) |
 
@@ -102,9 +103,9 @@ set; point it at a dbt target/ directory" — something an agent can act on and 
 
 ## Status
 
-M1 and M2 complete: seven tools, verified against a real dbt project via MCP Inspector and
-Claude Code, with self-contained tests and CI. Next: a Claude Skill for a recurring
-data-quality briefing, and structured logging of tool calls.
+Complete: eight tools, a `data-quality-brief` Claude Skill, structured call logging with
+usage measurement, self-contained tests, and CI on Python 3.11 and 3.12. Verified against a
+real dbt project via MCP Inspector and Claude Code.
 
 ## Development
 

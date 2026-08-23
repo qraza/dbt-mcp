@@ -6,9 +6,9 @@ readme = "README.md"
 authors = [
     { name = "Qamar Raza", email = "raza.qamar@gmail.com" }
 ]
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
-    "dbt-sentinel>=0.6.2",
+    "dbt-sentinel>=0.7.2",
     "mcp>=2.0.0",
 ]
 
