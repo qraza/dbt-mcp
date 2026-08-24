@@ -107,6 +107,13 @@ Complete: eight tools, a `data-quality-brief` Claude Skill, structured call logg
 usage measurement, self-contained tests, and CI on Python 3.11 and 3.12. Verified against a
 real dbt project via MCP Inspector and Claude Code.
 
+## Related projects
+
+- [dbt-sentinel](https://github.com/qraza/dbt-sentinel) — the library underneath this
+  server, published on PyPI; does the artifact parsing, row sampling and grounded analysis.
+- [taxi-analytics-pipeline](https://github.com/qraza/taxi-analytics-pipeline) — the dbt
+  project used to verify it end to end.
+
 ## Development
 
 ```bash
