@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-DEFAULT_LOG_PATH = Path(".dbt-mcp/calls.jsonl")
+DEFAULT_LOG_PATH = Path(".sentinel-mcp/calls.jsonl")
 
 # Minutes a human would spend answering the same question by hand: opening
 # run_results.json, cross-referencing manifest.json, then querying the warehouse.

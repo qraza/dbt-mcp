@@ -1,4 +1,4 @@
-# dbt-mcp
+# sentinel-mcp
 
 **Ask your dbt project what's wrong, in plain English.** An MCP server that exposes a
 dbt project's run state as tools, so an AI assistant composes its own answers to
@@ -8,7 +8,7 @@ written by hand.
 Built on [dbt-sentinel](https://pypi.org/project/dbt-sentinel/), which does the artifact
 parsing, row sampling and grounded analysis.
 
-![dbt-mcp tools in MCP Inspector](docs/tools.png)
+![sentinel-mcp tools in MCP Inspector](docs/tools.png)
 
 ## Tools
 
@@ -32,17 +32,17 @@ uv sync
 export DBT_TARGET_DIR=/path/to/dbt/target
 export DBT_DUCKDB_PATH=/path/to/warehouse.duckdb   # or BQ_PROJECT=my-project
 export ANTHROPIC_API_KEY=sk-ant-...                # only needed for explain_failure
-uv run dbt-mcp
+uv run sentinel-mcp
 ```
 
 Register it with Claude Code:
 
 ```bash
-claude mcp add dbt-mcp \
+claude mcp add sentinel-mcp \
   -e DBT_TARGET_DIR=$DBT_TARGET_DIR \
   -e DBT_DUCKDB_PATH=$DBT_DUCKDB_PATH \
   -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-  -- uv run --directory /path/to/dbt-mcp dbt-mcp
+  -- uv run --directory /path/to/sentinel-mcp sentinel-mcp
 ```
 
 Or inspect it interactively:
@@ -51,7 +51,7 @@ Or inspect it interactively:
 npx @modelcontextprotocol/inspector \
   -e DBT_TARGET_DIR=$DBT_TARGET_DIR \
   -e DBT_DUCKDB_PATH=$DBT_DUCKDB_PATH \
-  uv run dbt-mcp
+  uv run sentinel-mcp
 ```
 
 ## What it looks like in use
@@ -127,7 +127,7 @@ sibling repository required.
 
 ## Observability and measurement
 
-Every tool call is appended to a structured log (`.dbt-mcp/calls.jsonl` by default,
+Every tool call is appended to a structured log (`.sentinel-mcp/calls.jsonl` by default,
 override with `DBT_MCP_LOG`): tool name, duration, status, truncated arguments, and any
 error. `usage_stats` summarises it.
 
