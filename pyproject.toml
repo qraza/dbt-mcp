@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sentinel-mcp = "dbt_mcp.server:main"
+sentinel-mcp = "sentinel_mcp.server:main"
 
 [build-system]
 requires = ["uv_build>=0.11.3,<0.12.0"]

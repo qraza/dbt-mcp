@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from dbt_mcp import server
+from sentinel_mcp import server
 
 
 @pytest.fixture
