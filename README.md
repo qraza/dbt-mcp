@@ -21,6 +21,7 @@ parsing, row sampling and grounded analysis.
 | `model_lineage` | What a model depends on, what depends on it, blast radius | No |
 | `test_history` | New breakage or long-standing, with trend | No |
 | `health` | Config, connectivity, and manifest/warehouse consistency | No |
+| `usage_stats` | Call counts, latency, errors, estimated time saved | No |
 
 Only one tool calls a model. Lineage, history and summaries are deterministic lookups —
 using an LLM for them would add cost, latency and risk for no benefit.
@@ -93,7 +94,7 @@ an agent compose answers to questions you didn't — it picks the tools and the 
 when to use it. The docstrings *are* the interface: they become the descriptions the model
 reads when choosing.
 
-**AI only where it earns its place.** Six of seven tools are deterministic. Only root-cause
+**AI only where it earns its place.** Seven of eight tools are deterministic. Only root-cause
 explanation needs a model.
 
 **Read-only by contract.** The warehouse is opened read-only; this inspects, never mutates.
@@ -144,7 +145,7 @@ Observed on a real dbt project:
 | Deterministic tools | ~4 ms |
 | `explain_failure` (one LLM call) | ~11 s |
 
-That 2,500x gap is why only one of seven tools uses a model. Lineage, history and run
+That 2,500x gap is why only one of eight tools uses a model. Lineage, history and run
 summaries are graph and file lookups; routing them through an LLM would add latency and
 cost for no gain in accuracy.
 
