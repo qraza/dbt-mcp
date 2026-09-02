@@ -317,6 +317,11 @@ def explain_failure(test_name: str, sample_limit: int = 20) -> dict[str, Any]:
         analysis = analyze(ctx)
     except RuntimeError as exc:
         return {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001 - an agent needs a message, not a traceback
+        return {
+            "error": f"Could not reach the model: {type(exc).__name__}: {exc}",
+            "hint": "Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.",
+        }
 
     return {
         "test_name": test.test_name,
